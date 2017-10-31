@@ -9,6 +9,12 @@ set(CMAKE_BUILD_TYPE Release CACHE STRING "Release" FORCE)
 set(CMAKE_SKIP_BUILD_RPATH  FALSE)
 
 
+#############################################
+## OpenCV
+#############################################
+find_package(OpenCV REQUIRED)
+
+
 IF (NOT APPLE)
   find_package(OpenMP)
   set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${OpenMP_C_FLAGS}")
@@ -64,6 +70,11 @@ install(TARGETS integrate DESTINATION bin)
 add_executable (get_intrinsics src/prog/get_intrinsics.cpp)
 target_link_libraries(get_intrinsics ${PCL_LIBRARIES} ${Boost_PROGRAM_OPTIONS_LIBRARY})
 install(TARGETS get_intrinsics DESTINATION bin)
+
+
+add_executable (generate_clouds src/prog/generate_clouds.cpp)
+target_link_libraries(generate_clouds ${OpenCV_LIBRARIES} ${PCL_LIBRARIES} ${Boost_PROGRAM_OPTIONS_LIBRARY})
+
 
 # Install the Header files preserving the directory
 set(HEADER_FILES include/cpu_tsdf/impl/tsdf_volume_octree.hpp
