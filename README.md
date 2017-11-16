@@ -74,3 +74,10 @@ Note on the codebase
 You'll notice some extraneous-seeming layouts to the codebase: eigen\_extensions vs cpu\_tsdf, TSDFInterface as a parent of TSDFVolumeOctree. At the moment this probably seems unnecessary; it's a biproduct of the fact that other methods (GPU-based as used by KinectFusion, CPU with no octree as used by my masochistic past-self) have also existed in unstable forms, in larger projects. I leave this layer of 
 abstraction here on the off chance that I port the others to the project (modulo public interest), but feel 
 free to ignore it for now and judge me accordingly.
+
+Custom Run
+=====
+
+./generate_clouds
+python transform_poses.py
+./integrate --in /tmp/clouds_export/output --out  /tmp/cinonino/ --fx 538.399364 --fy 538.719401 --cx 316.192117 --cy 240.080174 --color true --cell-size 0.001
