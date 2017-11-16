@@ -29,8 +29,8 @@ def KDLFromArray(chunks, fmt='XYZQ'):
     return frame
 
 
-source_file = "/home/daniele/Desktop/datasets/roars_2017/indust/indust_scene_7_dome/tf#_comau_smart_six_link6.txt"
-output_folder = "output"
+source_file = "/home/daniele/Desktop/datasets/roars_2017/indust/indust_scene_4_dome/tf#_comau_smart_six_link6.txt"
+output_folder = "/tmp/clouds_export/output"
 
 try:
     os.mkdir(output_folder)

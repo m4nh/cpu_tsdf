@@ -112,9 +112,9 @@ int main(int argc, char **argv)
 
   int jumps = 5;
 
-  std::string depths_path = "/home/daniele/Desktop/datasets/roars_2017/indust/indust_scene_7_dome/camera_depth_image_raw/";
-  std::string predictions_path = "/tmp/indust_scene_7_dome_raw_pix/images/";
-  std::string robot_poses_path = "/home/daniele/Desktop/datasets/roars_2017/indust/indust_scene_7_dome/tf#_comau_smart_six_link6.txt";
+  std::string depths_path = "/home/daniele/Desktop/datasets/roars_2017/indust/indust_scene_4_dome/camera_depth_image_raw/";
+  std::string predictions_path = "/tmp/indust_scene_4_dome_raw_pix/images/";
+  std::string robot_poses_path = "/home/daniele/Desktop/datasets/roars_2017/indust/indust_scene_4_dome/tf#_comau_smart_six_link6.txt";
 
   std::vector<std::string> depth_files;
   std::vector<std::string> rgb_files;
@@ -180,14 +180,14 @@ int main(int argc, char **argv)
     cv::resize(gt, gt, depth.size());
 
     pcl::PointCloud<PointType>::Ptr cloud(new pcl::PointCloud<PointType>());
-    extractPointCloud(prediction, depth, camera, cloud);
+    extractPointCloud(rgb, depth, camera, cloud);
 
     std::string dest = std::string(5, '0').append(".pcd");
 
     std::stringstream ss;
     ss << setfill('0') << setw(5) << i;
 
-    std::string output_name = "../python/output/" + ss.str() + ".pcd";
+    std::string output_name = "/tmp/clouds_export/output/" + ss.str() + ".pcd";
     std::cout << output_name << "\n";
 
     pcl::io::savePCDFileBinary(output_name, *cloud);
