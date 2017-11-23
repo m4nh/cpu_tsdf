@@ -246,7 +246,7 @@ int main(int argc, char **argv)
   bpo::options_description opts_desc("Allowed options");
   bpo::positional_options_description p;
 
-  opts_desc.add_options()("help,h", "produce help message")("in", bpo::value<std::string>()->required(), "Input dir")("out", bpo::value<std::string>()->required(), "Output dir")("volume-size", bpo::value<float>(), "Volume size")("cell-size", bpo::value<float>(), "Cell size")("num-frames", bpo::value<size_t>(), "Partially integrate the sequence: only the first N clouds used")("visualize", "Visualize")("verbose", "Verbose")("color", "Store color in addition to depth in the TSDF")("flatten", "Flatten mesh vertices")("cleanup", "Clean up mesh")("invert", "Transforms are inverted (world -> camera)")("world", "Clouds are given in the world frame")("organized", "Clouds are already organized")("width", bpo::value<int>(), "Image width")("height", bpo::value<int>(), "Image height")("zero-nans", "Nans are represented as (0,0,0)")("num-random-splits", bpo::value<int>(), "Number of random points to sample around each surface reading. Leave empty unless you know what you're doing.")("fx", bpo::value<float>(), "Focal length x")("fy", bpo::value<float>(), "Focal length y")("cx", bpo::value<float>(), "Center pixel x")("cy", bpo::value<float>(), "Center pixel y")("save-ascii", "Save ply file as ASCII rather than binary")("cloud-units", bpo::value<float>(), "Units of the data, in meters")("pose-units", bpo::value<float>(), "Units of the poses, in meters")("max-sensor-dist", bpo::value<float>(), "Maximum distance data can be from the sensor")("min-sensor-dist", bpo::value<float>(), "Minimum distance data can be from the sensor")("trunc-dist-pos", bpo::value<float>(), "Positive truncation distance")("trunc-dist-neg", bpo::value<float>(), "Negative truncation distance")("min-weight", bpo::value<float>(), "Minimum weight to render")("jumps", bpo::value<int>(), "Jumps over dataset")("cloud-only", "Save aggregate cloud rather than actually running TSDF");
+  opts_desc.add_options()("help,h", "produce help message")("mesh_name", bpo::value<std::string>()->required(), "Name of output mesh")("in", bpo::value<std::string>()->required(), "Input dir")("out", bpo::value<std::string>()->required(), "Output dir")("volume-size", bpo::value<float>(), "Volume size")("cell-size", bpo::value<float>(), "Cell size")("num-frames", bpo::value<size_t>(), "Partially integrate the sequence: only the first N clouds used")("visualize", "Visualize")("verbose", "Verbose")("color", "Store color in addition to depth in the TSDF")("flatten", "Flatten mesh vertices")("cleanup", "Clean up mesh")("invert", "Transforms are inverted (world -> camera)")("world", "Clouds are given in the world frame")("organized", "Clouds are already organized")("width", bpo::value<int>(), "Image width")("height", bpo::value<int>(), "Image height")("zero-nans", "Nans are represented as (0,0,0)")("num-random-splits", bpo::value<int>(), "Number of random points to sample around each surface reading. Leave empty unless you know what you're doing.")("fx", bpo::value<float>(), "Focal length x")("fy", bpo::value<float>(), "Focal length y")("cx", bpo::value<float>(), "Center pixel x")("cy", bpo::value<float>(), "Center pixel y")("save-ascii", "Save ply file as ASCII rather than binary")("cloud-units", bpo::value<float>(), "Units of the data, in meters")("pose-units", bpo::value<float>(), "Units of the poses, in meters")("max-sensor-dist", bpo::value<float>(), "Maximum distance data can be from the sensor")("min-sensor-dist", bpo::value<float>(), "Minimum distance data can be from the sensor")("trunc-dist-pos", bpo::value<float>(), "Positive truncation distance")("trunc-dist-neg", bpo::value<float>(), "Negative truncation distance")("min-weight", bpo::value<float>(), "Minimum weight to render")("jumps", bpo::value<int>(), "Jumps over dataset")("cloud-only", "Save aggregate cloud rather than actually running TSDF");
 
   bpo::variables_map opts;
   bpo::store(bpo::parse_command_line(argc, argv, opts_desc, bpo::command_line_style::unix_style ^ bpo::command_line_style::allow_short), opts);
@@ -333,6 +333,7 @@ int main(int argc, char **argv)
   bool found_pose_file = false;
   std::string pose_extension = "";
   std::string dir = opts["in"].as<std::string>();
+  std::string mesh_name = opts["mesh_name"].as<std::string>();
   std::string out_dir = opts["out"].as<std::string>();
   boost::filesystem::directory_iterator end_itr;
   for (boost::filesystem::directory_iterator itr(dir); itr != end_itr; ++itr)
@@ -385,8 +386,12 @@ int main(int argc, char **argv)
   for (size_t i = 0; i < pcd_files.size(); i++)
   {
     const std::string pcd_path = pcd_files[i];
-    std::string suffix = boost::filesystem::basename(boost::filesystem::path(pcd_path.substr(pcd_prefix.length())));
-    std::string pose_path = pose_prefix + suffix + pose_extension;
+
+    size_t lastindex = pcd_path.find_last_of(".");
+    std::string raw_name = pcd_path.substr(0, lastindex);
+
+    //std::string suffix = boost::filesystem::basename(boost::filesystem::path(pcd_path.substr(pcd_prefix.length())));
+    std::string pose_path = raw_name + ".txt";
     // Check if .transform file exists
     if (boost::filesystem::exists(pose_path))
     {
@@ -443,6 +448,9 @@ int main(int argc, char **argv)
   float cell_size = 0.006;
   if (opts.count("cell-size"))
     cell_size = opts["cell-size"].as<float>();
+  int frame_jumps = 1;
+  if (opts.count("jumps"))
+    frame_jumps = opts["jumps"].as<int>();
   int tsdf_res;
   int desired_res = tsdf_size / cell_size;
   // Snap to nearest power of 2;
@@ -497,6 +505,9 @@ int main(int argc, char **argv)
   }
   for (size_t i = 0; i < num_frames; i++)
   {
+    if (i % frame_jumps != 0)
+      continue;
+
     PCL_INFO("On frame %d / %d\n", i + 1, num_frames);
     if (poses.size() <= i)
     {
@@ -623,7 +634,7 @@ int main(int argc, char **argv)
       if (i % 20 == 0 || i == num_frames - 1)
       {
         pcl::VoxelGrid<pcl::PointXYZRGBA> vg;
-        vg.setLeafSize(0.01, 0.01, 0.01);
+        vg.setLeafSize(cell_size, cell_size, cell_size);
         vg.setInputCloud(aggregate);
         vg.filter(cloud_unorganized);
         *aggregate = cloud_unorganized;
@@ -662,11 +673,11 @@ int main(int argc, char **argv)
       vis->addPolygonMesh(*mesh);
       vis->spin();
     }
-    PCL_INFO("Entire pipeline took %f ms\n", tt.toc());
+    //PCL_INFO("Entire pipeline took %f ms\n", tt.toc());
     if (save_ascii)
-      pcl::io::savePLYFile(out_dir + "/mesh.ply", *mesh);
+      pcl::io::savePLYFile(out_dir + "/" + mesh_name + ".ply", *mesh);
     else
-      pcl::io::savePLYFileBinary(out_dir + "/mesh.ply", *mesh);
-    PCL_INFO("Saved to %s/mesh.ply\n", out_dir.c_str());
+      pcl::io::savePLYFileBinary(out_dir + "/" + mesh_name + ".ply", *mesh);
+    //PCL_INFO("Saved to %s/" + mesh_name + ".ply\n", out_dir.c_str());
   }
 }

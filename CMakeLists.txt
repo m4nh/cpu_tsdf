@@ -1,6 +1,9 @@
 cmake_minimum_required(VERSION 2.8 FATAL_ERROR)
 
 project(cpu_tsdf)
+
+add_compile_options(-std=c++11)
+
 # Find modules
 set(CMAKE_MODULE_PATH ${PROJECT_SOURCE_DIR}/cmake ${CMAKE_MODULE_PATH})
 set(CMAKE_BUILD_TYPE Release CACHE STRING "Release" FORCE)
