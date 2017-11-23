@@ -634,7 +634,7 @@ int main(int argc, char **argv)
       if (i % 20 == 0 || i == num_frames - 1)
       {
         pcl::VoxelGrid<pcl::PointXYZRGBA> vg;
-        vg.setLeafSize(cell_size, cell_size, cell_size);
+        vg.setLeafSize(0.01, 0.01, 0.01);
         vg.setInputCloud(aggregate);
         vg.filter(cloud_unorganized);
         *aggregate = cloud_unorganized;

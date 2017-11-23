@@ -62,6 +62,11 @@ add_executable (tsdf2mesh src/prog/tsdf2mesh.cpp)
 target_link_libraries(tsdf2mesh ${PCL_LIBRARIES} cpu_tsdf)
 install(TARGETS tsdf2mesh DESTINATION bin)
 
+include_directories(/home/daniele/work/ros/skimap_ws/src/skimap_ros/include)
+add_executable (skimap_integration src/prog/skimap_test.cpp)
+target_link_libraries(skimap_integration ${OpenCV_LIBRARIES} ${PCL_LIBRARIES} ${Boost_PROGRAM_OPTIONS_LIBRARY} cpu_tsdf)
+
+
 if (APPLE)
   add_executable (integrate MACOSX_BUNDLE src/prog/integrate.cpp)
 else(APPLE)

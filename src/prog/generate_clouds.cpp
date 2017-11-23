@@ -71,18 +71,23 @@ struct CameraParameters
 
 typedef pcl::PointXYZRGB PointType;
 
-void extractPointCloud(cv::Mat &rgb, cv::Mat &depth, CameraParameters camera, pcl::PointCloud<PointType>::Ptr &cloud)
+void extractPointCloud(cv::Mat &rgb, cv::Mat &depth, CameraParameters camera, pcl::PointCloud<PointType>::Ptr &cloud, double depth_rescale = 1.0)
 {
 
   cloud->width = rgb.cols;
   cloud->height = rgb.rows;
   cloud->resize(rgb.cols * rgb.rows);
 
+  // double min, max;
+  // cv::minMaxLoc(depth, &min, &max);
+  // std::cout << min << "," << max << "\n";
+  // exit(0);
+
   for (float i = 0; i < depth.rows; i += 1)
   {
     for (float j = 0; j < depth.cols; j += 1)
     {
-      float d = float(depth.at<short>(i, j)) / 1000.0;
+      float d = float(depth.at<short>(i, j)) / (1000.0 * depth_rescale);
       double x = (d / camera.fx) * (j - camera.cx);
       double y = (d / camera.fy) * (i - camera.cy);
       double z = d;
@@ -157,13 +162,13 @@ struct RGBDDataset
     return rgb_files.size() == depth_files.size();
   }
 
-  pcl::PointCloud<PointType>::Ptr generatePointCloud(int index, CameraParameters camera)
+  pcl::PointCloud<PointType>::Ptr generatePointCloud(int index, CameraParameters camera, double depth_rescale = 1)
   {
     cv::Mat depth = cv::imread(depth_files[index], CV_LOAD_IMAGE_ANYDEPTH);
     cv::Mat rgb = cv::imread(rgb_files[index]);
 
     pcl::PointCloud<PointType>::Ptr cloud(new pcl::PointCloud<PointType>());
-    extractPointCloud(rgb, depth, camera, cloud);
+    extractPointCloud(rgb, depth, camera, cloud, depth_rescale);
     return cloud;
   }
 
@@ -191,6 +196,7 @@ int main(int argc, const char **argv)
   args::ValueFlag<double> fy(parser, "fy", "Camera Focal y", {"fy"}, 538.719401);
   args::ValueFlag<double> cx(parser, "cx", "Camera Cx", {"cx"}, 316.192117);
   args::ValueFlag<double> cy(parser, "cy", "Camera Cy", {"cy"}, 240.080174);
+  args::ValueFlag<double> depth_rescale(parser, "depth rescale", "Depth Rescale", {"depth_rescale"}, 1.0);
 
   camera.fx = args::get(fx);
   camera.fy = args::get(fy);
@@ -239,7 +245,7 @@ int main(int argc, const char **argv)
     ss << setfill('0') << setw(int(args::get(zfill))) << store_counter;
 
     string current_name = ss.str();
-    pcl::PointCloud<PointType>::Ptr cloud = dataset.generatePointCloud(i, camera);
+    pcl::PointCloud<PointType>::Ptr cloud = dataset.generatePointCloud(i, camera, args::get(depth_rescale));
 
     string cloud_name = current_name + ".pcd";
     string pose_name = current_name + ".txt";
