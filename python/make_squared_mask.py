@@ -6,9 +6,9 @@ import sys
 import numpy as np
 
 # path = '/media/daniele/data/daniele/datasets/indust_maks/scene1'
-path = '/media/daniele/data/daniele/datasets/indust_maks/scene7'
+path = '/home/daniele/Scrivania/scene_02'
 
-tag = 'mask_6'
+tag = 'mask_5'
 
 images = sorted(glob.glob(os.path.join(path, "*.png")))
 
@@ -30,12 +30,14 @@ for image in images:
     points = cv2.findNonZero(gray)
     rect = cv2.boundingRect(points)
 
-    cv2.rectangle(img, (rect[0], rect[1]), (rect[0] + rect[2], rect[1] + rect[3]), color, -1)
+    cv2.rectangle(img, (rect[0], rect[1]),
+                  (rect[0] + rect[2], rect[1] + rect[3]), color, -1)
     img[np.where((img == [0, 0, 0]).all(axis=2))] = [255, 255, 255]
     print rect
 
     base_name = os.path.basename(image).split(".")[0]
-    outpath = os.path.join(path, base_name + "_squared." + os.path.basename(image).split(".")[1])
+    outpath = os.path.join(path, base_name + "_squared." +
+                           os.path.basename(image).split(".")[1])
 
     cv2.imwrite(outpath, img)
     print outpath

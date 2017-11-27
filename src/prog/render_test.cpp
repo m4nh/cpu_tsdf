@@ -15,6 +15,7 @@
 //PCL
 
 #include <pcl/io/pcd_io.h>
+#include <pcl/io/ply_io.h>
 #include <pcl/point_types.h>
 #include <pcl/common/transforms.h>
 //OPENCV
@@ -34,30 +35,14 @@
 #include <boost/foreach.hpp>
 #include <boost/algorithm/string/predicate.hpp>
 
+#include <cpu_tsdf/tsdf_volume_octree.h>
+#include <cpu_tsdf/marching_cubes_tsdf_octree.h>
+
 #define MAX_RANDOM_COORD 10.0
 #define MIN_RANDOM_COORD -10.0
 #define MAX_RANDOM_COLOR 1.0
 #define MIN_RANDOM_COLOR 0.0
 
-/** 
- * skimap definition
- */
-typedef float CoordinateType;
-typedef int16_t IndexType;
-typedef float WeightType;
-typedef skimap::VoxelDataRGBW<WeightType, WeightType> VoxelDataColor;
-typedef skimap::SkipListMapV2<VoxelDataColor, IndexType, CoordinateType> SKIMAP;
-typedef skimap::SkipListMapV2<VoxelDataColor, IndexType, CoordinateType>::Voxel3D Voxel3D;
-SKIMAP *voxel_grid;
-
-/**
- * Helper function to obtain a random double in range.
- */
-double fRand(double fMin, double fMax)
-{
-    double f = (double)rand() / RAND_MAX;
-    return fMin + f * (fMax - fMin);
-}
 using namespace std;
 
 std::vector<Eigen::Affine3d> loadPoses(std::vector<std::string> &pose_files)
@@ -124,71 +109,63 @@ void extractFromFolder(string folder_name, string tag, vector<string> &output_fi
 int main(int argc, char **argv)
 {
 
-    float map_resolution = 0.01;
-    voxel_grid = new SKIMAP(map_resolution);
-
     std::string scene_path = "/tmp/daniele/pino";
+    std::string volume_path = "/tmp/daniele/scene_02_clouds_mask_all.tsdf";
     int jumps = 10;
 
     srand(time(NULL));
 
-    std::vector<std::string> pcd_files;
     std::vector<std::string> pose_files;
 
-    extractFromFolder(scene_path, "pcd", pcd_files);
     extractFromFolder(scene_path, "txt", pose_files);
-
-    typedef pcl::PointXYZRGB PointType;
-
     std::vector<Eigen::Affine3d> poses = loadPoses(pose_files);
-    std::cout << "Poses: " << poses.size() << "/" << pose_files.size() << "\n";
-    for (int i = 0; i < pcd_files.size(); i++)
+
+    cpu_tsdf::TSDFVolumeOctree::Ptr tsdf;
+    tsdf.reset(new cpu_tsdf::TSDFVolumeOctree);
+    tsdf->load(volume_path);
+    tsdf->setSensorDistanceBounds(0, 3.0);
+
+    typedef pcl::PointXYZRGBNormal PointType;
+    pcl::PointCloud<PointType>::Ptr view(new pcl::PointCloud<PointType>);
+
+    for (int s = 0; s < poses.size(); s++)
     {
-        if (i % jumps != 0)
-            continue;
+        view = tsdf->renderColoredView(poses[s]);
 
-        std::cout << "Progress: " << float(i) / float(pcd_files.size()) << "\n";
-        pcl::PointCloud<PointType>::Ptr cloud(new pcl::PointCloud<PointType>);
-        if (pcl::io::loadPCDFile<PointType>(pcd_files[i], *cloud) == 0) //* load the file
+        Eigen::Vector3d view_z = poses[s].matrix().block<3, 1>(0, 2);
+
+        std::cout << view->width << "," << view->height << "\n";
+        int w = 640;
+        int h = 480;
+        cv::Mat img(h, w, CV_8UC3);
+        for (int i = 0; i < h; i++)
         {
-            //std::cout << "OK" << std::endl;
-            pcl::transformPointCloud(*cloud, *cloud, poses[i]);
-
-            for (int p = 0; p < cloud->points.size(); p++)
+            for (int j = 0; j < w; j++)
             {
-                PointType point = cloud->points[p];
-                VoxelDataColor voxel(float(point.r) / 255.0, float(point.g) / 255.0, float(point.b) / 255.0, 1.0);
+                //std::cout << i << "," << j << "\n";
 
-                voxel_grid->integrateVoxel(
-                    CoordinateType(point.x),
-                    CoordinateType(point.y),
-                    CoordinateType(point.z),
-                    &voxel);
+                PointType point = (*view)(j, i);
+
+                float mag;
+
+                Eigen::Vector3d normal;
+                normal << point.normal_x, point.normal_y, point.normal_z;
+                mag = view_z.dot(normal);
+                //mag = mag < 0.0 ? -mag : 0.0;
+
+                cv::Vec3b color;
+                color[0] = cv::saturate_cast<unsigned char>(point.b + pow(-mag, 13) * 255);
+                color[1] = cv::saturate_cast<unsigned char>(point.g + pow(-mag, 13) * 255);
+                color[2] = cv::saturate_cast<unsigned char>(point.r + pow(-mag, 13) * 255);
+
+                img.at<cv::Vec3b>(i, j) = color;
             }
         }
+        cv::imshow("img", img);
+        cv::waitKey(0);
     }
 
-    std::vector<Voxel3D> voxels;
-    voxel_grid->fetchVoxels(voxels);
-
-    pcl::PointCloud<PointType>::Ptr scene(new pcl::PointCloud<PointType>);
-    scene->width = voxels.size();
-    scene->height = 1;
-    scene->resize(voxels.size());
-
-    for (int i = 0; i < voxels.size(); i++)
-    {
-        Voxel3D &voxel = voxels[i];
-        PointType &point = scene->points[i];
-        point.x = voxel.x;
-        point.y = voxel.y;
-        point.z = voxel.z;
-        point.r = voxel.data->r * 255.0;
-        point.g = voxel.data->g * 255.0;
-        point.b = voxel.data->b * 255.0;
-    }
-
-    pcl::io::savePCDFileBinaryCompressed("/tmp/daniele/output_cloud.pcd", *scene);
+    pcl::io::savePCDFileBinaryCompressed("/tmp/daniele/rendered_view.pcd", *view);
 
     //     //Builds the map
     //     float map_resolution = 0.05;

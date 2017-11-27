@@ -678,6 +678,9 @@ int main(int argc, char **argv)
       pcl::io::savePLYFile(out_dir + "/" + mesh_name + ".ply", *mesh);
     else
       pcl::io::savePLYFileBinary(out_dir + "/" + mesh_name + ".ply", *mesh);
+
+    tsdf->save(out_dir + "/" + mesh_name + ".tsdf");
+
     //PCL_INFO("Saved to %s/" + mesh_name + ".ply\n", out_dir.c_str());
   }
 }
