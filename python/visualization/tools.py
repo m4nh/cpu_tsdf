@@ -19,6 +19,8 @@ from scipy.cluster.hierarchy import dendrogram, linkage, fcluster, centroid, fcl
 # from sklearn.decomposition import TruncatedSVD
 from sklearn.decomposition import PCA
 
+from scipy.optimize import minimize, rosen, rosen_der
+
 
 def quaternion_from_matrix(matrix, isprecise=False):
     M = np.array(matrix, dtype=np.float64, copy=False)[:4, :4]
@@ -67,7 +69,7 @@ def quaternion_from_matrix(matrix, isprecise=False):
     return q
 
 
-def createBoxMarker(name, box, parent):
+def createBoxMarker(name, box, parent, color=(1.0, 1.0, 1.0)):
     #⬢⬢⬢⬢⬢➤ Map Marker
     marker = Marker()
     marker.header.frame_id = parent
@@ -89,26 +91,42 @@ def createBoxMarker(name, box, parent):
     # marker.pose.position.y = py
     # marker.pose.position.z = pz
 
-    marker.scale.x = math.fabs(box[0, 0] - box[0, 1])
-    marker.scale.y = math.fabs(box[1, 0] - box[1, 1])
-    marker.scale.z = math.fabs(box[2, 0] - box[2, 1])
-    marker.color.r = 1
-    marker.color.g = 1
-    marker.color.b = 1
+    if isinstance(box, VBox):
+        marker.scale.x = box.size[0]
+        marker.scale.y = box.size[1]
+        marker.scale.z = box.size[2]
+    elif box.shape == (3, 2):
+        marker.scale.x = math.fabs(box[0, 0] - box[0, 1])
+        marker.scale.y = math.fabs(box[1, 0] - box[1, 1])
+        marker.scale.z = math.fabs(box[2, 0] - box[2, 1])
+    marker.color.r = color[0]
+    marker.color.g = color[1]
+    marker.color.b = color[2]
     marker.color.a = 0.3
     return marker
 
 
 class Instance(object):
 
-    def __init__(self, points, voxels, label):
+    def __init__(self, points, label, voxels=[]):
         self.label = label
         self.points = points
         self.voxels = voxels
         self.center = Clusters.computeCentroid(self.points)
         _, _, self.rf = self.svd()
         self.transform = np.eye(4, dtype=float)
-        self.heavier_label = int(self.getHeavierLabel())
+        if len(voxels) > 0:
+            self.heavier_label = int(self.getHeavierLabel())
+        else:
+            self.heavier_label = self.label
+
+    @staticmethod
+    def fromFile(filename):
+        name = os.path.basename(filename).split('.')[0]
+        label = int(name.split('_')[2])
+        print "LOading", name, label
+        data = np.loadtxt(filename)
+        return Instance(points=data, label=label)
 
     def getHeavierLabel(self):
         label_map = {}
@@ -150,6 +168,14 @@ class Instance(object):
         frame.M = PyKDL.Rotation.Quaternion(q[3], q[0], q[1], q[2])
         self.transform = transformations.KLDtoNumpyMatrix(frame)
         return frame  # transformations.NumpyMatrixToKDL(self.transform)
+
+    def getBoxArea(self):
+        self.getRF()
+        box = self.getBBox()
+        sx = math.fabs(box[0, 0] - box[0, 1])
+        sy = math.fabs(box[1, 0] - box[1, 1])
+        sz = math.fabs(box[2, 0] - box[2, 1])
+        return sx * sy * sz
 
     def getBBox(self):
         hpoints = np.array(self.points).reshape(len(self.points), 3)
@@ -219,6 +245,23 @@ class Instance(object):
 
     def toString(self):
         return ' '.join(map(str, self.shortRepresentation()))
+
+    def updateSVD(self, x):
+        x = np.array(x).reshape(4)
+        x = x / np.linalg.norm(x)
+        frame = PyKDL.Frame()
+        frame.M = PyKDL.Rotation.Quaternion(x[0], x[1], x[2], x[3])
+        mat = transformations.KLDtoNumpyMatrix(frame)
+        self.rf = mat[0:3, 0:3]
+        area = self.getBoxArea()
+        print("Area:", area)
+        return area
+
+    def optimizeSVD(self):
+        frame = self.getRF()
+        x0 = frame.M.GetQuaternion()
+        x0 = np.array(x0)
+        minimize(self.updateSVD, x0, method='L-BFGS-B')
 
 
 class Clusters(object):
@@ -321,161 +364,44 @@ class MultiLabelVoxel(object):
         try:
             return MultiLabelVoxel.CLASSES_COLOR_MAP[label]
         except:
+
             return 'black'
 
 
-node = RosNode("ciao", disable_signals=True)
-node.setHz(1)
-map_file = node.setupParameter("map_file", "")
-min_w = node.setupParameter("min_w", 0)
-min_cluster_size = node.setupParameter("min_cluster_size", 0)
-debug = node.setupParameter("debug", True)
-is_gt = node.setupParameter("is_gt", False)
-output_path = node.setupParameter("output_path", "/tmp/daniele/")
-output_name = node.setupParameter("output_name", "")
-#⬢⬢⬢⬢⬢➤ Map Rototranslation
-roll = node.setupParameter("roll", 0.0)
-pitch = node.setupParameter("pitch", 0.0)
-yaw = node.setupParameter("yaw", 0.0)
-map_transform = PyKDL.Frame()
-map_transform.M = PyKDL.Rotation.RPY(roll, pitch, yaw)
+def createMarkerVolume(name, points=[], color=[1.0, 1.0, 1.0], map_resolution=0.01, base_frame='world'):
+    marker = Marker()
+    marker.header.frame_id = base_frame
+    marker.type = Marker.CUBE_LIST
+    marker.id = 0
+    marker.action = marker.ADD
+    marker.ns = name
+
+    marker.scale.x = map_resolution
+    marker.scale.y = map_resolution
+    marker.scale.z = map_resolution
+    for p in points:
+        pp = Point()
+        pp.x = p[0]
+        pp.y = p[1]
+        pp.z = p[2]
+        marker.points.append(pp)
+
+        cc = ColorRGBA()
+        cc.r = color[0]
+        cc.g = color[1]
+        cc.b = color[2]
+        cc.a = 1.0
+        marker.colors.append(cc)
+    return marker
 
 
-#⬢⬢⬢⬢⬢➤ Visualization topic
-vis_topic = node.createPublisher('/showmap/map', MarkerArray)
+class VBox(object):
 
+    def __init__(self, data):
+        self.data = data
+        self.label = int(data[0])
+        self.frame = transformations.NumpyVectorToKDL(data[1:8])
+        self.size = np.array(data[8:11]).reshape(3)
 
-#⬢⬢⬢⬢⬢➤ Read Map file
-ff = open(map_file, 'r')
-lines = ff.readlines()
-voxels = []
-skip_counter = -1
-map_resolution = 0.01
-
-for l in lines:
-    skip_counter += 1
-    if skip_counter == 1:
-        data = np.fromstring(l, sep=' ')
-        map_resolution = float(data[2])
-        print "Set resolution", data, data[2]
-    if skip_counter > 1:
-        data = np.fromstring(l, sep=' ')
-        vox = MultiLabelVoxel(data.ravel())
-        voxels.append(vox)
-
-
-#⬢⬢⬢⬢⬢➤ Map Marker
-marker = Marker()
-marker.header.frame_id = "world"
-marker.type = Marker.CUBE_LIST
-marker.id = 100
-marker.action = marker.ADD
-marker.ns = "map"
-
-marker.scale.x = map_resolution
-marker.scale.y = map_resolution
-marker.scale.z = map_resolution
-print "Resolutiion", map_resolution
-
-#⬢⬢⬢⬢⬢➤ Centroid
-center = np.array([0.0, 0.0, 0.0])
-center_counter = 0.0
-max_global_weight = 0.0
-for voxel in voxels:
-    center = center + voxel.pos
-    center_counter += 1.0
-    l, w = voxel.heavierLabel()
-    if w > max_global_weight:
-        max_global_weight = w
-center = center * (1.0 / center_counter)
-
-if float(min_w) != int(min_w):
-    min_w = max_global_weight * min_w
-    print("USING PERCENTAGE WEIGHT", min_w)
-
-
-if debug:
-    print "Max global weight:", max_global_weight
-
-#⬢⬢⬢⬢⬢➤ Clusters
-clusters = Clusters()
-
-#⬢⬢⬢⬢⬢➤ Marker Fill
-for voxel in voxels:
-
-    (l, w) = voxel.heavierLabel()
-    is_probable_background = voxel.containsLabel(-1)
-
-    label_color = voxel.getColor()
-
-    if w > min_w:
-
-        if not voxel.isBackground():
-            clusters.appendVoxel(voxel)
-
-        p = PyKDL.Vector(
-            voxel.pos[0] - center[0], voxel.pos[1] - center[1], voxel.pos[2] - center[2])
-        # p = map_transform * p
-
-        point = Point()
-        point.x = voxel.pos[0]
-        point.y = voxel.pos[1]
-        point.z = voxel.pos[2]
-        color = ColorRGBA()
-        color.r = label_color[0] / 255.0
-        color.g = label_color[1] / 255.0
-        color.b = label_color[2] / 255.0
-        color.a = 1  # float(w) / max_global_weight
-
-        marker.points.append(point)
-        marker.colors.append(color)
-
-clusters.buildClusters(th=0.025, min_cluster_size=min_cluster_size)
-
-if debug:
-    while node.isActive():
-        marker_array = MarkerArray()
-        marker_array.markers.append(marker)
-
-        for l, instance in clusters.objects_map.iteritems():
-            cluster_name = "Cluster_{}_{}".format(l, instance.heavier_label)
-            frame = instance.getBoxRF()
-            #frame.M = PyKDL.Rotation()
-
-            box = instance.getBBox()
-            marker_array.markers.append(createBoxMarker(
-                "Box_{}".format(l),
-                box,
-                cluster_name
-            ))
-            node.broadcastTransform(
-                frame, cluster_name, "world", node.getCurrentTime())
-            print "INstance"
-            print instance.toString()
-
-        for m in marker_array.markers:
-            m.header.stamp = node.getCurrentTime()
-        vis_topic.publish(marker_array)
-        node.tick()
-else:
-    try:
-        os.mkdir(os.path.join(output_path, output_name))
-    except:
-        pass
-
-    instance_list = []
-    counter = 0
-    for l, instance in clusters.objects_map.iteritems():
-        instance_list.append(instance.shortRepresentation())
-        short = instance.shortRepresentation()
-        name = "instance_{}_{}.txt".format(
-            str(counter).zfill(3), int(short[0]))
-        name = os.path.join(output_path, output_name, name)
-        np.savetxt(name, instance.points)
-        counter += 1
-
-    instance_list = np.array(instance_list)
-
-    #out_name = "instances_" + os.path.basename(map_file) + "_{}{}.txt".format(min_w, '_GT' if is_gt else '')
-    instances_output_path = os.path.join(output_path, output_name, "boxes.txt")
-    np.savetxt(instances_output_path, instance_list)
+    def createMarker(self,):
+        createBoxMarker()
